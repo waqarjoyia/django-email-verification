@@ -8,6 +8,7 @@ from django.urls import get_resolver
 from django.utils import timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from smtplib import SMTP
 from threading import Thread
 
@@ -19,22 +20,23 @@ def sendConfirm(user, **kwargs):
     try:
         setattr(user, active_field, False)
         user.save()
-
+        name = kwargs.get('name')
         try:
             token = kwargs['token']
         except KeyError:
             token = default_token_generator.make_token(user)
 
         email = urlsafe_b64encode(str(user.email).encode('utf-8'))
-        t = Thread(target=sendConfirm_thread, args=(user.email, f'{email.decode("utf-8")}/{token}'))
+        t = Thread(target=sendConfirm_thread, args=(user.email, f'{email.decode("utf-8")}/{token}', name))
         t.start()
     except AttributeError:
         raise InvalidUserModel('The user model you provided is invalid')
 
 
-def sendConfirm_thread(email, token):
+def sendConfirm_thread(email, token, name=None):
     email_server = validateAndGetField('EMAIL_SERVER')
     sender = validateAndGetField('EMAIL_FROM_ADDRESS')
+    sender_name = validateAndGetField('EMAIL_SENDER_NAME', raise_error=False)
     domain = validateAndGetField('EMAIL_PAGE_DOMAIN')
     subject = validateAndGetField('EMAIL_MAIL_SUBJECT')
     address = validateAndGetField('EMAIL_ADDRESS')
@@ -50,7 +52,7 @@ def sendConfirm_thread(email, token):
 
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
-    msg['From'] = sender
+    msg['From'] = formataddr((sender_name.title(), sender)) if sender_name else sender
     msg['To'] = email
 
     from .views import verify
@@ -60,9 +62,10 @@ def sendConfirm_thread(email, token):
             addr = str(v[0][0][0])
             link = domain + addr[0: addr.index('%')] + token
 
+    email_data = {'link': link, 'name': name, 'domain': domain.strip('/')}
     if mail_plain:
         try:
-            text = render_to_string(mail_plain, {'link': link})
+            text = render_to_string(mail_plain, email_data)
             part1 = MIMEText(text, 'plain')
             msg.attach(part1)
         except AttributeError:
@@ -70,7 +73,7 @@ def sendConfirm_thread(email, token):
         
     if mail_html:
         try:
-            html = render_to_string(mail_html, {'link': link})
+            html = render_to_string(mail_html, email_data)
             part2 = MIMEText(html, 'html')
             msg.attach(part2)
         except AttributeError:
