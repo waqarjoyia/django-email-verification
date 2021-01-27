@@ -56,7 +56,8 @@ def sendConfirm_thread(email, token, name=None):
     msg['To'] = email
 
     from .views import verify
-    link = f'{domain}verify/{token}'
+    http_protocol = "http://" if not domain.startswith("http") else ''
+    link = f'{http_protocol}{domain}verify/{token}'
     for k, v in get_resolver(None).reverse_dict.items():
         if k is verify and v[0][0][1][0]:
             addr = str(v[0][0][0])
